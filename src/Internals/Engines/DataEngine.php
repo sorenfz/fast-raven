@@ -21,7 +21,11 @@ final class DataEngine {
     #\ VARIABLES
 
     private static bool $ready = false;
-    private ?\PDO $pdo = null;
+    private array $pdo = [];
+    private string $db = "";
+        public function use(string $db): void { $this->db = $db; }
+    private ?string $lastError = null;
+        public function getLastError(): ?string { return $this->lastError; }
 
     #/ VARIABLES
     #----------------------------------------------------------------------
@@ -59,45 +63,64 @@ final class DataEngine {
     #\ PRIVATE FUNCTIONS
 
     /**
-     * This function will return a DSN string for the database connection.
-     * It takes the host and database name as parameters and returns a string in the format:
-     * "mysql:host=$host;dbname=$db;charset=utf8mb4"
-     *
-     * @param string $host The host of the database server.
-     * @param string $port The port of the database server.
-     * @param string $db The name of the database.
-     * @return string The DSN string.
+     * Reads a DB_* environment variable for the active connection, falling back to the default connection value.
+     * Named connections use DB_<NAME>_<KEY> (e.g., DB_LOGS_NAME) and inherit any missing key from DB_<KEY>.
      */
-    private function buildDatabaseDSN(string $host, string $port, string $db): string {
-        return "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
+    private function env(string $key, string $default = ""): string {
+        $base = Bee::env("DB_$key", $default);
+        return $this->db === "" ? $base : Bee::env("DB_" . strtoupper($this->db) . "_$key", $base);
     }
 
     /**
-     * This function will initialize the PDO object for the DataEngine.
-     * If the PDO object is not already initialized, it will attempt to create a new PDO object with the database connection settings.
-     * If the PDO object cannot be created, an error will be logged and the PDO object will be set to null.
+     * Returns the PDO object of the active connection, creating it on first use.
+     * If the connection cannot be created, the error is logged and null is returned.
      */
-    private function initializePDO(): void {
-        if($this->pdo === null) {
+    private function pdo(): ?\PDO {
+        if(!isset($this->pdo[$this->db])) {
             try {
                 $options = [
-                    \PDO::ATTR_PERSISTENT => Bee::env("DB_PERSISTENT", "false") === "true",
+                    \PDO::ATTR_PERSISTENT => $this->env("PERSISTENT", "false") === "true",
                     \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
                     \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
                 ];
-                if(Bee::env("DB_SSL", "false") === "true") {
-                    $caPath = realpath(Bee::env("DB_SSL_CA", ""));
+                if($this->env("SSL", "false") === "true") {
+                    $caPath = realpath($this->env("SSL_CA"));
                     if($caPath !== false) {
                         $options[\PDO::MYSQL_ATTR_SSL_CA] = $caPath;
                         $options[\PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
                     }
                 }
 
-                $this->pdo = new \PDO($this->buildDatabaseDSN(Bee::env("DB_HOST", "localhost"), Bee::env("DB_PORT", "3306"), Bee::env("DB_NAME")), Bee::env("DB_USER", "root"), Bee::env("DB_PASS", ""), $options);
+                $dsn = "mysql:host={$this->env("HOST", "localhost")};port={$this->env("PORT", "3306")};dbname={$this->env("NAME")};charset=utf8mb4";
+                $this->pdo[$this->db] = new \PDO($dsn, $this->env("USER", "root"), $this->env("PASS"), $options);
             } catch (\PDOException $e) {
-                $this->pdo = null;
+                $this->lastError = $e->getMessage();
                 LogService::error("PDOException: ".$e->getMessage());
+                return null;
             }
+        }
+
+        return $this->pdo[$this->db];
+    }
+
+    /**
+     * Prepares and executes a query on the active connection.
+     * Errors are logged and return null, except inside transaction() where they propagate to trigger the rollback.
+     */
+    private function execute(string $query, array $vars): ?\PDOStatement {
+        $pdo = $this->pdo();
+        if($pdo === null) return null;
+
+        try {
+            $this->lastError = null;
+            $stmt = $pdo->prepare($query);
+            $stmt->execute($vars);
+            return $stmt;
+        } catch (\PDOException $e) {
+            $this->lastError = $e->getMessage();
+            if($pdo->inTransaction()) throw $e;
+            LogService::error("PDOException: ".$e->getMessage() . " -> $query");
+            return null;
         }
     }
 
@@ -230,43 +253,20 @@ final class DataEngine {
     }
 
     /**
-     * This function will execute a given SQL query with given variables and return the results.
-     * It takes a QueryType enum, a query string, an array of variables, and a boolean flag to indicate whether to fetch all results or not.
-     * If the query is of type SELECT, it will return an array of results, otherwise it will return a boolean indicating whether the query was successful or not.
+     * Executes a built query and shapes the result according to the query type.
      *
-     * @param QueryType $type The type of query to execute.
-     * @param string $query The SQL query string to execute.
-     * @param array $vars The array of variables to bind to the query.
-     * 
-     * @return array|bool|null The result of the query, or null if an error occurred.
+     * @return array|bool|int|null The result of the query, or null if an error occurred.
      */
     private function simpleRequestToDatabase(QueryType $type, string $query, array $vars = []): array|bool|int|null {
-        if($this->pdo === null) $this->initializePDO();
+        $stmt = $this->execute($query, $vars);
+        if($stmt === null) return null;
 
-        if($this->pdo !== null) {
-            try {
-                $stmt = $this->pdo->prepare($query);
-                $ok = $stmt->execute($vars);
-
-                if($ok) {
-                    if($type == QueryType::SELECT) return $stmt->fetchAll();
-                    else if($type == QueryType::COUNT) return (int)$stmt->fetch()["count"];
-                    else if($type == QueryType::DELETE) return $stmt->rowCount() > 0;
-                    else if($type == QueryType::INSERT || $type == QueryType::UPDATE) return $ok;
-                } else {
-                    LogService::error("SQL Query was not successfull -> $query");
-                    if($type == QueryType::SELECT) return null;
-                    else if($type == QueryType::COUNT) return 0;
-                    else if($type == QueryType::INSERT || $type == QueryType::UPDATE || $type == QueryType::DELETE) return false;
-                }
-
-            } catch (\PDOException $e) {
-                LogService::error("PDOException: ".$e->getMessage());
-                return null;
-            }
-        }
-
-        return null;
+        return match($type) {
+            QueryType::SELECT => $stmt->fetchAll(),
+            QueryType::COUNT => (int)$stmt->fetchColumn(),
+            QueryType::DELETE => $stmt->rowCount() > 0,
+            default => true,
+        };
     }
 
     #/ PRIVATE FUNCTIONS
@@ -276,24 +276,59 @@ final class DataEngine {
     #\ METHODS
 
     /**
-     * Executes a raw SQL query and returns the result.
+     * Executes a raw SQL query. Statements producing a result set return all rows, any other statement returns its affected row count.
      *
      * @param string $query The SQL query to execute.
-     * @param array $vars The variables to bind to the query.
+     * @param array $vars The variables to bind to the query (positional or named).
      * 
-     * @return array|bool|int|null The result of the query, or null if an error occurred.
+     * @return array|int|null The rows or affected row count, or null if an error occurred.
      */
-    public function raw(string $query, array $vars = []): array|bool|int|null {
-        $q = strtoupper(trim($query));
-        $type = match(true) {
-            str_starts_with($q, QueryType::SELECT->value) => QueryType::SELECT,
-            str_starts_with($q, QueryType::COUNT->value) => QueryType::COUNT,
-            str_starts_with($q, QueryType::INSERT->value) => QueryType::INSERT,
-            str_starts_with($q, QueryType::UPDATE->value) => QueryType::UPDATE,
-            str_starts_with($q, QueryType::DELETE->value) => QueryType::DELETE,
-            default => QueryType::SELECT,
-        };
-        return $this->simpleRequestToDatabase($type, $query, $vars);
+    public function raw(string $query, array $vars = []): array|int|null {
+        $stmt = $this->execute($query, $vars);
+        if($stmt === null) return null;
+
+        return $stmt->columnCount() > 0 ? $stmt->fetchAll() : $stmt->rowCount();
+    }
+
+    /**
+     * Executes a raw SQL query and returns the first row.
+     *
+     * @return array|null The first row, or null if there is none or an error occurred.
+     */
+    public function rawOne(string $query, array $vars = []): ?array {
+        return $this->execute($query, $vars)?->fetch() ?: null;
+    }
+
+    /**
+     * Executes a raw SQL query and returns the first column of the first row.
+     *
+     * @return mixed The scalar value, or null if there is none or an error occurred.
+     */
+    public function rawValue(string $query, array $vars = []): mixed {
+        $value = $this->execute($query, $vars)?->fetchColumn();
+        return $value === false ? null : $value;
+    }
+
+    /**
+     * Runs the callback inside a transaction on the active connection.
+     * The transaction is rolled back if the callback returns false, throws, or any query inside it fails.
+     *
+     * @return bool True if the transaction was committed, false otherwise.
+     */
+    public function transaction(callable $fn): bool {
+        $pdo = $this->pdo();
+        if($pdo === null) return false;
+
+        try {
+            $pdo->beginTransaction();
+            if($fn() === false) throw new \RuntimeException("Transaction callback returned false.");
+            return $pdo->commit();
+        } catch (\Throwable $e) {
+            if($pdo->inTransaction()) $pdo->rollBack();
+            $this->lastError = $e->getMessage();
+            LogService::error("Transaction rolled back: ".$e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -311,7 +346,7 @@ final class DataEngine {
     public function select(string $table, array $cols, ?ConditionList $cond = null, string $orderBy = "", int $limit = 0, int $offset = 0): ?array {
         try {
             $query = $this->buildQuery(QueryType::SELECT, $table, $cols, $cond, $orderBy, $limit, $offset);
-            return $this->simpleRequestToDatabase(QueryType::SELECT, $query, $cond === null ? [] : $cond->getAllRightValues());
+            return $this->simpleRequestToDatabase(QueryType::SELECT, $query, $cond === null ? [] : $cond->getBindValues());
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
             return null;
@@ -336,7 +371,7 @@ final class DataEngine {
     public function join(string $table, array $joined, array $joinedLeftCols, array $joinedRightCols, array $cols, ?ConditionList $cond = null, string $orderBy = "", int $limit = 0, int $offset = 0): ?array {
         try {
             $query = $this->buildQuery(QueryType::SELECT, $table, $cols, $cond, $orderBy, $limit, $offset, $joined, $joinedLeftCols, $joinedRightCols);
-            return $this->simpleRequestToDatabase(QueryType::SELECT, $query, $cond === null ? [] : $cond->getAllRightValues());
+            return $this->simpleRequestToDatabase(QueryType::SELECT, $query, $cond === null ? [] : $cond->getBindValues());
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
             return null;
@@ -369,10 +404,8 @@ final class DataEngine {
      * @return int|null The last insert ID, or null if an error occurred.
      */
     public function getLastInsertId(): ?int {
-        if($this->pdo === null) $this->initializePDO();
-        if($this->pdo !== null) return (int)$this->pdo->lastInsertId();
-        
-        return null;
+        $id = $this->pdo()?->lastInsertId();
+        return $id === null ? null : (int)$id;
     }
 
     /**
@@ -387,7 +420,7 @@ final class DataEngine {
     public function update(string $table, Map $cols, ConditionList $cond): bool {
         try {
             $query = $this->buildQuery(QueryType::UPDATE, $table, $cols->getAllKeys(), $cond);
-            $res = $this->simpleRequestToDatabase(QueryType::UPDATE, $query, array_merge($cols->getAllValues(), $cond->getAllRightValues()));
+            $res = $this->simpleRequestToDatabase(QueryType::UPDATE, $query, array_merge($cols->getAllValues(), $cond->getBindValues()));
             return $res === true;
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
@@ -406,7 +439,7 @@ final class DataEngine {
     public function delete(string $table, ConditionList $cond): bool {
         try {
             $query = $this->buildQuery(QueryType::DELETE, $table, [], $cond);
-            $res = $this->simpleRequestToDatabase(QueryType::DELETE, $query, $cond->getAllRightValues());
+            $res = $this->simpleRequestToDatabase(QueryType::DELETE, $query, $cond->getBindValues());
             return $res === true;
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
@@ -425,7 +458,7 @@ final class DataEngine {
     public function count(string $table, ?ConditionList $cond = null): int {
         try {
             $query = $this->buildQuery(QueryType::COUNT, $table, [], $cond);
-            $res = $this->simpleRequestToDatabase(QueryType::COUNT, $query, $cond === null ? [] : $cond->getAllRightValues());
+            $res = $this->simpleRequestToDatabase(QueryType::COUNT, $query, $cond === null ? [] : $cond->getBindValues());
             return $res ?? 0;
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
@@ -447,27 +480,14 @@ final class DataEngine {
 
         try {
             $query = $this->buildQuery(QueryType::INSERT, $table, $cols);
-            if($this->pdo === null) $this->initializePDO();
-            if($this->pdo === null) return false;
-
-            $this->pdo->beginTransaction();
-            $stmt = $this->pdo->prepare($query);
-
-            foreach ($valuesArray as $values) {
-                if (!$stmt->execute($values)) {
-                    throw new \PDOException("Execution failed for a row in batch insert.");
-                }
-            }
-
-            return $this->pdo->commit();
-        } catch (\PDOException $e) {
-            if ($this->pdo?->inTransaction()) $this->pdo->rollBack();
-            LogService::error("PDOException during batch insert: ".$e->getMessage());
-            return false;
         } catch (SecurityVulnerabilityException $e) {
             LogService::error($e->getMessage());
             return false;
         }
+
+        return $this->transaction(function() use ($query, $valuesArray) {
+            foreach ($valuesArray as $values) $this->execute($query, $values);
+        });
     }
 
     #/ METHODS

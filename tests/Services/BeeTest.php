@@ -534,5 +534,12 @@ class BeeTest extends TestCase
 
         $this->assertFalse($result);
     }
-}
 
+    public function testGetBaseDomainHandlesCommonPublicSuffixes(): void
+    {
+        foreach (["shop.example.com.au" => "example.com.au", "a.b.example.ac.uk" => "example.ac.uk", "app.google.de" => "google.de", "www.example.io" => "example.io", "fastraven.loc" => "fastraven.loc"] as $host => $expected) {
+            $_ENV['SITE_ADDRESS'] = $host;
+            $this->assertEquals($expected, Bee::getBaseDomain(), $host);
+        }
+    }
+}

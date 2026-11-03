@@ -40,8 +40,8 @@ final class Response {
      * 
      * @return Response The new Response instance.
      */
-    public static function new(bool $success, int $code, string $message = "", string|array|null $data = []): Response
-    {
+    #[\NoDiscard]
+    public static function new(bool $success, int $code, string $message = "", string|array|null $data = []): Response {
         return (new Response($success, $code))->setData($data ?? [])->setMessage($message);
     }
 
@@ -53,6 +53,7 @@ final class Response {
      * 
      * @return Response The new Response instance.
      */
+    #[\NoDiscard]
     public static function file(bool $success, string $path): Response {
         return new Response($success, $success ? 200 : 500, ["path" => $path]);
     }

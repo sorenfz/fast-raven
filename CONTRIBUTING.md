@@ -19,8 +19,6 @@ Run the full test suite before pushing:
 composer test
 ```
 
-> There's a known Failure in FastRaven\Tests\Services\BeeTest::testGetBaseDomainReturnsCorrectBaseDomain. You can omit this result.
-
 ## Pull Request Guidelines
 
 - Provide a clear description of the changes.

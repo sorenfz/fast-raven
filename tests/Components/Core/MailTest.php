@@ -265,4 +265,17 @@ class MailTest extends TestCase
 
         $this->assertEquals($subject, $mail->getSubject());
     }
+
+    public function testSetLangStoresLanguageAndFile(): void
+    {
+        $mail = Mail::new(Pair::mail('A', 'a@x.com'), Pair::mail('B', 'b@x.com'), 'Subject', 'welcome.php');
+
+        $this->assertEquals('', $mail->getLang());
+        $this->assertEquals('global', $mail->getLangFile());
+
+        $mail->setLang('es', 'mails');
+
+        $this->assertEquals('es', $mail->getLang());
+        $this->assertEquals('mails', $mail->getLangFile());
+    }
 }

@@ -125,6 +125,44 @@ final class AuthService {
     }
 
     /**
+     * Retrieves the custom data of the authorized user if an authorized session exists.
+     *
+     * This function will return the custom data of the authorized user if an authorized session exists.
+     * If no authorized session exists, it will return null.
+     *
+     * @return ?array The custom data of the authorized user if an authorized session exists, null otherwise.
+     */
+    public static function getAuthorizedUserCustomData(): ?array {
+        if(self::$ready) {
+            self::ensureSession();
+            if(self::$engine->validateSession()) {
+                return $_SESSION["sgas_custom"];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Replaces the custom data of the authorized user if an authorized session exists.
+     *
+     * @param array $customData The new custom data to store in the session.
+     *
+     * @return bool True if the custom data was stored, false if no authorized session exists.
+     */
+    public static function setAuthorizedUserCustomData(array $customData): bool {
+        if(self::$ready) {
+            self::ensureSession();
+            if(self::$engine->validateSession()) {
+                self::$engine->setCustomData($customData);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Automatically logs in a user via their username and password, and creates an authorized session if the login is successful.
      *
      * @param ?string $user The username of the user to login.
@@ -166,6 +204,7 @@ final class AuthService {
      *
      * @return ?string The new CSRF token if the authorized session exists, null otherwise.
      */
+    #[\NoDiscard]
     public static function regenerateCSRF(): ?string {
         if(self::$ready) {
             self::ensureSession();

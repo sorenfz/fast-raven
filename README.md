@@ -2,7 +2,7 @@
 
 <img src="docs/logo.png" align="right" width="180" alt="Fast Raven Logo">
 
-![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg) ![Status](https://img.shields.io/badge/status-production--ready-success.svg) ![PHP](https://img.shields.io/badge/php-%5E8.4-777BB4.svg) ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg) ![Status](https://img.shields.io/badge/status-production--ready-success.svg) ![PHP](https://img.shields.io/badge/php-%5E8.5-777BB4.svg) ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 *No bloat. No magic. Just speed.*
 
@@ -13,7 +13,7 @@
 ## Installation
 
 ### Requirements
-- **PHP** ^8.4
+- **PHP** ^8.5
 - **MySQL** ^8.0
 - **Composer** ^2.9.2
 - **Apache** ^2.4 (or Nginx/IIS with appropriate config)

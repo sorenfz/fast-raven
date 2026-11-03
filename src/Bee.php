@@ -2,6 +2,8 @@
 
 namespace FastRaven;
 
+use FastRaven\Services\CacheService;
+
 use FastRaven\Types\DataType;
 use FastRaven\Types\ProjectFolderType;
 
@@ -80,22 +82,17 @@ final class Bee {
     }
 
     /**
-     * Returns the base domain of the site from the SITE_ADDRESS environment variable.
-     * If the SITE_ADDRESS environment variable is not set, returns "localhost".
-     * If the SITE_ADDRESS environment variable is set to a domain with 3 or more parts (e.g., "sub.example.com"), returns the last 2 parts of the domain (e.g., "example.com").
+     * Returns the base domain of the site from the SITE_ADDRESS environment variable ("localhost" if not set).
+     * Subdomains are stripped: "sub.example.com" gives "example.com" and "sub.example.co.uk" gives "example.co.uk"
+     * (a two-letter TLD preceded by a label of up to three letters is treated as a public suffix).
      *
      * @return string the base domain of the site
      */
     public static function getBaseDomain(): string {
-        $host = Bee::env("SITE_ADDRESS", "localhost");
-        $parts = explode(".", $host);
+        $parts = explode(".", Bee::env("SITE_ADDRESS", "localhost"));
+        $keep = count($parts) >= 3 && strlen(array_last($parts)) === 2 && strlen($parts[count($parts) - 2]) <= 3 ? 3 : 2;
 
-        if (count($parts) >= 3) {
-            $domain = array_slice($parts, -2); # UK... Why, common wealth, WHY???
-            return implode(".", $domain);
-        } else {
-            return $host;
-        }
+        return implode(".", array_slice($parts, -$keep));
     }
 
     /**
@@ -120,6 +117,7 @@ final class Bee {
      * 
      * @return string the hashed password
      */
+    #[\NoDiscard]
     public static function hashPassword(string $password): string {
         return password_hash($password, PASSWORD_ARGON2ID, ['memory_cost' => 1 << 16, 'time_cost' => 4, 'threads' => 2]);
     }
@@ -206,6 +204,42 @@ final class Bee {
         
         fclose($handle);
         return $result;
+    }
+
+    /**
+     * Returns the parsed language file, cached for 24 hours (never cached on dev).
+     *
+     * @param string $file The language file name without extension, relative to src/web/assets/lang/.
+     *
+     * @return array The translations indexed by language then key (e.g., ["en" => ["KEY" => "value"]]).
+     */
+    public static function langData(string $file = "global"): array {
+        $cacheKey = Bee::getCacheKey("lang", $file);
+
+        if(Bee::isDev()) CacheService::remove($cacheKey);
+        $data = CacheService::read($cacheKey);
+        if($data === null) {
+            $data = Bee::parseCSV(Bee::buildProjectPath(ProjectFolderType::SRC_WEB_ASSETS_LANG, "$file.csv"));
+            CacheService::write($cacheKey, $data, 86400);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Translates a key into the given language. Falls back to the first language column, then to the key itself.
+     *
+     * @param string $key The translation key.
+     * @param string $lang The language code (CSV column).
+     * @param string $file The language file name without extension.
+     *
+     * @return string The translated text.
+     */
+    #[\NoDiscard]
+    public static function lang(string $key, string $lang, string $file = "global"): string {
+        $data = Bee::langData($file);
+        $text = $data[$lang][$key] ?? "";
+        return $text !== "" ? $text : (array_first($data)[$key] ?? $key);
     }
 
     /**

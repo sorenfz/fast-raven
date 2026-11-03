@@ -32,6 +32,8 @@ final class Config {
         public function isPrivacyRegisterLogs(): bool { return $this->privacyRegisterLogs; }
     private bool $privacyRegisterOrigin = true;
         public function isPrivacyRegisterOrigin(): bool { return $this->privacyRegisterOrigin; }
+    private bool $proxyTrusted = false;
+        public function isProxyTrusted(): bool { return $this->proxyTrusted; }
 
     private int $rateLimitView = -1;
     private int $rateLimitAPI = -1;
@@ -138,7 +140,17 @@ final class Config {
     }
 
     /**
-     * Configure the rate limits.
+     * Configure the reverse proxy trust.
+     *
+     * @param bool $trustHeaders Whether to take the client IP and protocol from X-Forwarded-For / X-Forwarded-Proto. Only enable behind a proxy you control.
+     */
+    public function configureProxy(bool $trustHeaders = false): Config {
+        $this->proxyTrusted = $trustHeaders;
+        return $this;
+    }
+
+    /**
+     * Configure the rate limits. Limits apply per authorized user; anonymous traffic is left to the reverse proxy.
      *
      * @param int $views The maximum number of views allowed per minute. Set to -1 to disable rate limiting.
      * @param int $api The maximum number of API requests allowed per minute. Set to -1 to disable rate limiting.

@@ -18,6 +18,8 @@ final class CacheEngine {
 
     private static bool $ready = false;
     private CacheType $type = CacheType::FILE;
+    private string $prefix = "";
+        public function prefix(string $key): string { return $this->prefix . $key; }
 
     private const int SHMOP_SEGMENT_SIZE = 1024;
     private const int SHMOP_MODE = 0644;
@@ -32,12 +34,15 @@ final class CacheEngine {
      * Initializes the CacheEngine if it is not already busy.
      * Auto-detects the best available backend: APCu > shmop > File.
      * 
+     * @param string $prefix Prefix prepended to every key, isolating the site from others sharing the backend.
+     * 
      * @return ?CacheEngine The CacheEngine object if it was successfully created, null otherwise.
      */
-    public static function zap(): ?CacheEngine {
+    public static function zap(string $prefix = ""): ?CacheEngine {
         if(!self::$ready) {
             self::$ready = true;
             $inst = new CacheEngine();
+            $inst->prefix = $prefix;
             
             if (function_exists("apcu_enabled") && apcu_enabled()) $inst->type = CacheType::APCU;
             elseif (function_exists("shmop_open")) $inst->type = CacheType::SHARED;
@@ -66,6 +71,41 @@ final class CacheEngine {
     #/ INIT
     #----------------------------------------------------------------------
     
+    #----------------------------------------------------------------------
+    #\ LOCK
+
+    /**
+     * Acquires a file-based lock for a key, used for atomic increments on every backend and all shmop operations.
+     * 
+     * @return mixed File handle or false on failure.
+     */
+    private function lock(string $key): mixed {
+        $lockFile = Bee::buildProjectPath(ProjectFolderType::STORAGE_CACHE, md5($key) . ".lock");
+        $fp = @fopen($lockFile, "c");
+        
+        if($fp) {
+            if(flock($fp, LOCK_EX)) return $fp;
+            else fclose($fp);
+        }
+        
+        return false;
+    }
+
+    /**
+     * Releases a lock and removes the lock file.
+     */
+    private function unlock(mixed $lock): void {
+        if ($lock) {
+            $path = stream_get_meta_data($lock)['uri'];
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            @unlink($path);
+        }
+    }
+
+    #/ LOCK
+    #----------------------------------------------------------------------
+
     #----------------------------------------------------------------------
     #\ APCu BACKEND
 
@@ -124,16 +164,23 @@ final class CacheEngine {
      * @return int The new value, or 0 if failed.
      */
     public function apcuIncrement(string $key, int $step = 1): int {
-        $item = $this->apcuRead($key);
-        
-        if ($item && is_int($item["value"])) {
-            $item["value"] += $step;
-            $expires = max(0, $item["expires"] - time());
+        $lock = $this->lock($key);
+        if (!$lock) return 0;
+
+        try {
+            $item = $this->apcuRead($key);
             
-            if ($this->apcuWrite($key, $item["value"], $expires)) return $item["value"];
+            if ($item && is_int($item["value"])) {
+                $item["value"] += $step;
+                $expires = max(0, $item["expires"] - time());
+                
+                if ($this->apcuWrite($key, $item["value"], $expires)) return $item["value"];
+            }
+            
+            return 0;
+        } finally {
+            $this->unlock($lock);
         }
-        
-        return 0;
     }
 
     /**
@@ -148,12 +195,13 @@ final class CacheEngine {
     }
 
     /**
-     * Clears the entire APCu cache.
+     * Clears every APCu entry belonging to this site (prefix).
      * 
      * @return bool True if successful, false otherwise.
      */
     public function apcuEmpty(): bool {
-        return apcu_clear_cache();
+        if($this->prefix === "") return apcu_clear_cache();
+        return apcu_delete(new \APCUIterator("/^" . preg_quote($this->prefix, "/") . "/")) !== false;
     }
 
     #/ APCu BACKEND
@@ -171,39 +219,6 @@ final class CacheEngine {
      */
     private function shmopKey(string $key): int {
         return hexdec(hash("xxh32", $key)) & 0x7FFFFFFF;
-    }
-
-    /**
-     * Acquires a file-based lock for shmop operations.
-     * 
-     * @param string $key The key to lock.
-     * 
-     * @return mixed File handle or false on failure.
-     */
-    private function shmopLock(string $key): mixed {
-        $lockFile = Bee::buildProjectPath(ProjectFolderType::STORAGE_CACHE, md5($key) . ".lock");
-        $fp = @fopen($lockFile, "c");
-        
-        if($fp) {
-            if(flock($fp, LOCK_EX)) return $fp;
-            else fclose($fp);
-        }
-        
-        return false;
-    }
-
-    /**
-     * Releases a file-based lock and removes the lock file.
-     * 
-     * @param mixed $lock The lock handle to release.
-     */
-    private function shmopUnlock(mixed $lock): void {
-        if ($lock) {
-            $path = stream_get_meta_data($lock)['uri'];
-            flock($lock, LOCK_UN);
-            fclose($lock);
-            @unlink($path);
-        }
     }
 
     /**
@@ -232,7 +247,7 @@ final class CacheEngine {
      * @return ?array The cached item, or null if not found or expired.
      */
     public function shmopRead(string $key): ?array {
-        $lock = $this->shmopLock($key);
+        $lock = $this->lock($key);
         if (!$lock) return null;
         
         try {
@@ -255,7 +270,7 @@ final class CacheEngine {
             
             return null;
         } finally {
-            $this->shmopUnlock($lock);
+            $this->unlock($lock);
         }
     }
 
@@ -269,7 +284,7 @@ final class CacheEngine {
      * @return bool True if successful, false otherwise.
      */
     public function shmopWrite(string $key, mixed $value, int $expires): bool {
-        $lock = $this->shmopLock($key);
+        $lock = $this->lock($key);
         if (!$lock) return false;
         
         try {
@@ -297,7 +312,7 @@ final class CacheEngine {
             
             return false;
         } finally {
-            $this->shmopUnlock($lock);
+            $this->unlock($lock);
         }
     }
 
@@ -310,7 +325,7 @@ final class CacheEngine {
      * @return int The new value, or 0 if failed.
      */
     public function shmopIncrement(string $key, int $step = 1): int {
-        $lock = $this->shmopLock($key);
+        $lock = $this->lock($key);
         if (!$lock) return 0;
         
         try {
@@ -345,7 +360,7 @@ final class CacheEngine {
             
             return 0;
         } finally {
-            $this->shmopUnlock($lock);
+            $this->unlock($lock);
         }
     }
 
@@ -357,13 +372,13 @@ final class CacheEngine {
      * @return bool True if successful, false otherwise.
      */
     public function shmopRemove(string $key): bool {
-        $lock = $this->shmopLock($key);
+        $lock = $this->lock($key);
         if (!$lock) return false;
         
         try {
             return $this->shmopRemoveInternal($this->shmopKey($key));
         } finally {
-            $this->shmopUnlock($lock);
+            $this->unlock($lock);
         }
     }
 
@@ -466,16 +481,23 @@ final class CacheEngine {
      * @return int The new value of the file, or 0 if the file does not exist or is not an integer.
      */
     public function fileIncrement(string $key, int $step = 1): int {
-        $item = $this->fileRead($key);
-        
-        if ($item && is_int($item["value"])) {
-            $item["value"] += $step;
+        $lock = $this->lock($key);
+        if (!$lock) return 0;
+
+        try {
+            $item = $this->fileRead($key);
             
-            $res = file_put_contents($this->getFilePath($key), json_encode($item), LOCK_EX);
-            if ($res !== false) return $item["value"];
+            if ($item && is_int($item["value"])) {
+                $item["value"] += $step;
+                
+                $res = file_put_contents($this->getFilePath($key), json_encode($item), LOCK_EX);
+                if ($res !== false) return $item["value"];
+            }
+            
+            return 0;
+        } finally {
+            $this->unlock($lock);
         }
-        
-        return 0;
     }
 
     /**

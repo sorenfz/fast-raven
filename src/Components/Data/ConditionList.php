@@ -89,6 +89,15 @@ class ConditionList {
         return array_map(fn($condition) => $condition->getRight(), $this->data);
     }
 
+    /**
+     * Returns the flat list of values to bind to the query, in condition order.
+     *
+     * @return array The bind values (arrays flattened, booleans as int, literals skipped).
+     */
+    public function getBindValues(): array {
+        return array_merge([], ...array_map(fn($condition) => $condition->getBindValues(), $this->data));
+    }
+
     public function replaceAllLeftValues(array $values): ConditionList {
         for($i = 0; $i < count($this->data); $i++) {
            if(isset($values[$i])) $this->data[$i]->setLeft($values[$i]);

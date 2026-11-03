@@ -78,14 +78,16 @@ class Lib {
     }
 
     /**
-     * Change the language of all elements with data-lang attribute.
+     * Change the language: persists the choice in the "lang" cookie (read by the backend on the next render)
+     * and swaps the content of all elements with a data-lang attribute.
      * @param {string} lang - Language code (e.g., 'en', 'es').
      */
     static changeLanguage(lang) {
         if (!Lib.LANG_INTERNAL || !Lib.LANG_INTERNAL[lang]) return;
 
         Lib.CURRENT_LANGUAGE = lang;
-        localStorage.setItem("activeLang", lang);
+        document.cookie = "lang=" + lang + "; path=/; max-age=31536000; SameSite=Lax; Secure";
+        document.documentElement.lang = lang;
 
         const translations = Lib.LANG_INTERNAL[lang];
         $('[data-lang]').each(function() {
@@ -97,7 +99,6 @@ class Lib {
 
 $(document).ready(function() {
     Lib.CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content;
-    Lib.LANG_INTERNAL = JSON.parse(document.getElementById("__lang-internal").textContent);
-    Lib.CURRENT_LANGUAGE = localStorage.getItem("activeLang") ?? document.documentElement.dataset.defaultLang;
-    Lib.changeLanguage(Lib.CURRENT_LANGUAGE);
+    Lib.LANG_INTERNAL = JSON.parse(document.getElementById("__lang-internal")?.textContent ?? "{}");
+    Lib.CURRENT_LANGUAGE = document.documentElement.lang;
 });

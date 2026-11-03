@@ -493,4 +493,38 @@ class RequestTest extends TestCase
         $this->assertEquals('/tmp/phpABC123', $avatar->getPath());
         $this->assertEquals('/tmp/phpDEF456', $document->getPath());
     }
+
+    // =====================================================================
+    // Language preferences
+    // =====================================================================
+
+    public function testPreferredLanguagesOrderedByQuality(): void
+    {
+        $request = new Request('/', 'GET', '', [], '127.0.0.1', 'fr-CH, fr;q=0.9, en;q=0.8, de;q=0.7, *;q=0.5');
+
+        $this->assertEquals(['fr', 'en', 'de', '*'], $request->getPreferredLanguages());
+    }
+
+    public function testPreferredLanguagesCookieComesFirst(): void
+    {
+        $request = new Request('/', 'GET', '', [], '127.0.0.1', 'en-US,en;q=0.9', 'ES');
+
+        $this->assertEquals(['es', 'en'], $request->getPreferredLanguages());
+    }
+
+    public function testPreferredLanguagesEmptyWhenNothingProvided(): void
+    {
+        $request = new Request('/', 'GET', '', [], '127.0.0.1');
+
+        $this->assertEquals([], $request->getPreferredLanguages());
+    }
+
+    public function testPostIgnoresNonArrayJsonBody(): void
+    {
+        $request = new Request('/submit', 'POST', '"just a string"', [], '127.0.0.1');
+        $this->assertNull($request->post('anything'));
+
+        $request = new Request('/submit', 'POST', '42', [], '127.0.0.1');
+        $this->assertNull($request->post('anything'));
+    }
 }

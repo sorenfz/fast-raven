@@ -77,6 +77,7 @@ final class AuthEngine {
     public function initializeSessionCookie(string $sessionName, int $lifetime, bool $globalAuth = false): void {
         ini_set("session.use_strict_mode", 1);
         ini_set("session.gc_maxlifetime", $lifetime);
+        ini_set("session.cache_limiter", ""); // Cache-Control is owned by HeaderEngine
         session_name($sessionName);
 
         $options = [
@@ -115,6 +116,15 @@ final class AuthEngine {
         $_SESSION["sgas_uid"] = $id;
         $_SESSION["sgas_custom"] = $customData;
         $_SESSION["sgas_csrf"] = $csrf;
+    }
+
+    /**
+     * Replaces the custom data of the authorized session.
+     *
+     * @param array $customData The new custom data.
+     */
+    public function setCustomData(array $customData): void {
+        $_SESSION["sgas_custom"] = $customData;
     }
 
     /**

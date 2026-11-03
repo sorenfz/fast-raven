@@ -33,6 +33,10 @@ final class Mail {
     private int $timeout = 3000;
         public function getTimeout(): int { return $this->timeout; }
         public function setTimeout(int $timeout): Mail { $this->timeout = $timeout; return $this; }
+    private string $lang = "";
+        public function getLang(): string { return $this->lang; }
+    private string $langFile = "global";
+        public function getLangFile(): string { return $this->langFile; }
     
 
     #/ VARIABLES
@@ -80,7 +84,17 @@ final class Mail {
     #----------------------------------------------------------------------
     #\ METHODS
 
-
+    /**
+     * Translates the mail: every {{KEY}} left in the subject and body after the replace values is looked up in the language file.
+     *
+     * @param string $lang The language code (CSV column).
+     * @param string $langFile The language file name without extension.
+     */
+    public function setLang(string $lang, string $langFile = "global"): Mail {
+        $this->lang = $lang;
+        $this->langFile = $langFile;
+        return $this;
+    }
 
     #/ METHODS
     #----------------------------------------------------------------------
