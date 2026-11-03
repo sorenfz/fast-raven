@@ -87,4 +87,18 @@ class ConditionListTest extends TestCase
         
         $this->assertEquals([10, 50], $rights);
     }
+
+    public function testGetBindValuesFlattensAndSkipsLiterals(): void
+    {
+        $list = ConditionList::new([
+            Condition::equals("a", 1),
+            Condition::in("b", [2, 3]),
+            Condition::isNull("c"),
+            Condition::between("d", 4, 5),
+            Condition::equals("e", true)
+        ]);
+
+        $this->assertEquals([1, 2, 3, 4, 5, 1], $list->getBindValues());
+        $this->assertEquals([], ConditionList::new()->getBindValues());
+    }
 }

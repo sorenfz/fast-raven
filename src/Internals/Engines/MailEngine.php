@@ -119,20 +119,23 @@ final class MailEngine {
     }
 
     /**
-     * Sets the email subject and body for the PHPMailer instance with optional placeholder replacements.
+     * Sets the email subject and body for the PHPMailer instance, applying replace values and translations.
      *
      * @param string $template The HTML template content.
-     * @param string $subject The email subject line.
-     * @param ?Map $replaceValues Optional collection of placeholder replacements (key: placeholder, value: replacement).
+     * @param Mail $mail The mail holding the subject, replace values and language.
      */
-    private function setMailerBody(string $template, string $subject, ?Map $replaceValues): void {
+    private function setMailerBody(string $template, Mail $mail): void {
+        $subject = $mail->getSubject();
+        $template = str_replace($mail->getReplaceValues()->getAllKeys(), $mail->getReplaceValues()->getAllValues(), $template);
+
+        if($mail->getLang() !== "") {
+            $translate = fn($m) => Bee::lang($m[1], $mail->getLang(), $mail->getLangFile());
+            $subject = preg_replace_callback('/\{\{([A-Za-z0-9_]+)\}\}/', $translate, $subject);
+            $template = preg_replace_callback('/\{\{([A-Za-z0-9_]+)\}\}/', $translate, $template);
+        }
+
         $this->mailer->isHTML(true);
         $this->mailer->Subject = $subject;
-
-        if($replaceValues) {
-            $template = str_replace($replaceValues->getAllKeys(), $replaceValues->getAllValues(), $template);
-        }
-        
         $this->mailer->Body = $template;
     }
 
@@ -177,7 +180,7 @@ final class MailEngine {
         try {
             $this->setMailerBasic($mail->getTimeout());
             $this->setMailerAddress($mail->getOrigin(), $mail->getDestination(), $mail->getBccMails());
-            $this->setMailerBody($template, $mail->getSubject(), $mail->getReplaceValues());
+            $this->setMailerBody($template, $mail);
             $this->setMailerAttachments($mail->getAttachments());
 
             $res = $this->mailer->send();
@@ -229,7 +232,7 @@ final class MailEngine {
 
             $this->setMailerBasic($mail->getTimeout());
             $this->setMailerAddress($mail->getOrigin(), $mail->getDestination(), $mail->getBccMails());
-            $this->setMailerBody($template, $mail->getSubject(), $mail->getReplaceValues());
+            $this->setMailerBody($template, $mail);
             $this->setMailerAttachments($mail->getAttachments());
 
             if(!$this->mailer->send()) {

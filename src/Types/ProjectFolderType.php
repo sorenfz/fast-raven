@@ -21,6 +21,7 @@ enum ProjectFolderType: string {
     case SRC_VIEWS = self::SRC->value . "views" . DIRECTORY_SEPARATOR;
     case SRC_API = self::SRC->value . "api" . DIRECTORY_SEPARATOR;
     case SRC_CDN = self::SRC->value . "cdn" . DIRECTORY_SEPARATOR;
+    case SRC_LIB = self::SRC->value . "lib" . DIRECTORY_SEPARATOR;
     case SRC_WEB = self::SRC->value . "web" . DIRECTORY_SEPARATOR;
     case SRC_WEB_TEMPLATES = self::SRC_WEB->value . "templates" . DIRECTORY_SEPARATOR;
     case SRC_WEB_TEMPLATES_FRAGMENTS = self::SRC_WEB_TEMPLATES->value . "fragments" . DIRECTORY_SEPARATOR;

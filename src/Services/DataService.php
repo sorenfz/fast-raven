@@ -43,21 +43,94 @@ final class DataService {
     #\ METHODS
 
     /**
+     * Selects the active database connection for the rest of the request.
+     * Named connections read DB_<NAME>_* environment variables and inherit missing keys from the default DB_* ones.
+     *
+     * @param string $db The connection name (e.g., "logs" for DB_LOGS_*). Empty string returns to the default connection.
+     */
+    public static function use(string $db = ""): void {
+        if(self::$ready) {
+            self::$engine->use($db);
+        }
+    }
+
+    /**
      * Executes a raw SQL query.
      *
      * @param string $query The SQL query to execute.
-     * @param array $vars [optional] The variables to bind to the query.
+     * @param array $vars [optional] The variables to bind to the query (positional "?" or named ":name").
      *
      * @warning NEVER TRUST USER INPUT. ONLY $vars ARE PROTECTED AGAINST SQL INJECTION.
      * 
-     * @return array|bool|int|null The result of the query, or null if an error occurred.
+     * @return array|int|null The rows for result sets, the affected row count otherwise, or null if an error occurred.
      */
-    public static function sql(string $query, array $vars = []): array|bool|int|null {
+    public static function sql(string $query, array $vars = []): array|int|null {
         if(self::$ready) {
             return self::$engine->raw($query, $vars);
         }
 
+        return null;
+    }
+
+    /**
+     * Executes a raw SQL query and returns the first row.
+     *
+     * @warning NEVER TRUST USER INPUT. ONLY $vars ARE PROTECTED AGAINST SQL INJECTION.
+     * 
+     * @return array|null The first row, or null if there is none or an error occurred.
+     */
+    #[\NoDiscard]
+    public static function sqlOne(string $query, array $vars = []): ?array {
+        if(self::$ready) {
+            return self::$engine->rawOne($query, $vars);
+        }
+
+        return null;
+    }
+
+    /**
+     * Executes a raw SQL query and returns the first column of the first row (e.g., COUNT(*), MAX(id)).
+     *
+     * @warning NEVER TRUST USER INPUT. ONLY $vars ARE PROTECTED AGAINST SQL INJECTION.
+     * 
+     * @return mixed The scalar value, or null if there is none or an error occurred.
+     */
+    #[\NoDiscard]
+    public static function sqlValue(string $query, array $vars = []): mixed {
+        if(self::$ready) {
+            return self::$engine->rawValue($query, $vars);
+        }
+
+        return null;
+    }
+
+    /**
+     * Runs the callback inside a transaction on the active connection.
+     * The transaction is rolled back if the callback returns false, throws, or any query inside it fails.
+     *
+     * @param callable $fn The queries to run. Must not nest another transaction.
+     * 
+     * @return bool True if the transaction was committed, false otherwise.
+     */
+    public static function transaction(callable $fn): bool {
+        if(self::$ready) {
+            return self::$engine->transaction($fn);
+        }
+
         return false;
+    }
+
+    /**
+     * Gets the error message of the last failed query, if any.
+     *
+     * @return string|null The PDO error message, or null if the last query succeeded.
+     */
+    public static function getLastError(): ?string {
+        if(self::$ready) {
+            return self::$engine->getLastError();
+        }
+
+        return null;
     }
 
     /**
@@ -116,7 +189,7 @@ final class DataService {
      */
     public static function selectOneWhere(string $table, array $cols, ConditionList $conditions): ?array {
         if(self::$ready) {
-            return self::$engine->select($table, $cols, $conditions, "", 1)[0] ?? null;
+            return array_first(self::$engine->select($table, $cols, $conditions, "", 1) ?? []);
         }
 
         return null;
@@ -135,7 +208,7 @@ final class DataService {
      */
     public static function selectOneById(string $table, array $cols, int $id): ?array {
         if(self::$ready) {
-            return self::$engine->select($table, $cols, ConditionList::new([Condition::equals("id", $id)]), "", 1)[0] ?? null;
+            return array_first(self::$engine->select($table, $cols, ConditionList::new([Condition::equals("id", $id)]), "", 1) ?? []);
         }
 
         return null;
@@ -241,6 +314,7 @@ final class DataService {
      *
      * @return int|null The last insert ID, or null if an error occurred.
      */
+    #[\NoDiscard]
     public static function getLastInsertId(): ?int {
         if(self::$ready) {
             return self::$engine->getLastInsertId();

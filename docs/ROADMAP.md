@@ -4,13 +4,27 @@ This document outlines potential features and improvements for future versions o
 
 ---
 
-## v1.1.0 - "Powerful API" update
+## v1.1.0 - "Powerful API" update (released)
+
+### Features
+- [x] Built-in rate limiting per authorized user
+- [x] Multi-Database Support (named connections)
+- [x] Transactions, raw SQL helpers and last error for DataService
+- [x] Server-side i18n, translated mails and custom head tags
+- [x] Site libraries (`src/lib/`, `Site\` namespace)
+- [x] Per-site cache isolation
+
+## v1.2.0 - "Advanced technologies" update
 
 ### Features
 - [ ] Background job queue system
-- [ ] Built-in API rate limiting per user
 - [ ] API versioning support
 - [ ] Built-in API token management
+- [ ] WebSocket support for real-time features
+- [ ] OAuth2/SSO integration helper
+- [ ] ORM-like component for DataService
+- [ ] NoSQL support
+- [ ] Two-factor authentication helpers
 
 ### Performance
 - [ ] HTTP/3 support and optimization hints
@@ -19,16 +33,6 @@ This document outlines potential features and improvements for future versions o
 ### Developer Experience
 - [ ] Built-in database migrations system
 - [ ] Better error pages with stack traces in dev mode
-
-## v1.2.0 - "Advanced technologies" update
-
-### Features
-- [ ] WebSocket support for real-time features
-- [ ] OAuth2/SSO integration helper
-- [ ] Multi-Database Support
-- [ ] ORM-like component for DataService
-- [ ] NoSQL support
-- [ ] Two-factor authentication helpers
 
 ---
 
@@ -44,5 +48,5 @@ Open an issue on the repository to discuss your ideas!
 
 ---
 
-**Last Updated:** 2026-02-01  
-**Current Version:** v1.0.0
+**Last Updated:** 2026-11-03  
+**Current Version:** v1.1.0

@@ -3,6 +3,7 @@
 namespace FastRaven\Tests\Exceptions;
 
 use PHPUnit\Framework\TestCase;
+use FastRaven\Exceptions\UnhandledException;
 use FastRaven\Exceptions\BadImplementationException;
 use FastRaven\Exceptions\BadMiddlewareException;
 use FastRaven\Exceptions\MiddlewareDeniedException;
@@ -259,5 +260,15 @@ class ExceptionsTest extends TestCase
 
         $devException = new DeveloperException("file", "msg");
         $this->assertEquals("DeveloperException", $devException->getExceptionName());
+    }
+
+    public function testUnhandledExceptionWrapsThrowable(): void
+    {
+        $e = new UnhandledException(new \TypeError("boom"));
+
+        $this->assertEquals(500, $e->getStatusCode());
+        $this->assertStringStartsWith("TypeError: boom (", $e->getMessage());
+        $this->assertEquals("This resource is not available at this time.", $e->getPublicMessage());
+        $this->assertEquals("UnhandledException", $e->getExceptionName());
     }
 }

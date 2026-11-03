@@ -8,6 +8,7 @@ use FastRaven\Exceptions\NotFoundException;
 use FastRaven\Exceptions\NotAuthorizedException;
 use FastRaven\Exceptions\RateLimitExceededException;
 use FastRaven\Exceptions\SmartException;
+use FastRaven\Exceptions\UnhandledException;
 
 use FastRaven\Internals\Kernel;
 
@@ -78,6 +79,13 @@ final class Server {
 
         require_once Bee::buildProjectPath(ProjectFolderType::CONFIG_ENV, "env.php");
 
+        // Site\ namespace maps to the site's src/lib/ folder (per-site shared logic).
+        spl_autoload_register(function(string $class): void {
+            if(!str_starts_with($class, "Site\\")) return;
+            $file = Bee::buildProjectPath(ProjectFolderType::SRC_LIB, str_replace("\\", "/", substr($class, 5)) . ".php");
+            if(is_file($file)) require $file;
+        });
+
         return new Server();
     }
 
@@ -118,22 +126,20 @@ final class Server {
         if($this->kernel->isViewRequest()) {
             $status = $e->getStatusCode();
             $config = $this->kernel->getConfig();
-            if($e instanceof NotFoundException || is_subclass_of($e, NotFoundException::class)) {
-                if($config->getDefaultNotFoundPathRedirect() !== null) {
-                    HeaderService::addHeader("Location", $config->getDefaultNotFoundPathRedirect());
-                    $status = 302;
-                }
-            } else if($e instanceof MiddlewareDeniedException || is_subclass_of($e, MiddlewareDeniedException::class)) {
-                HeaderService::addHeader("Location", "/");
+            $location = null;
+            if($e instanceof NotFoundException) {
+                $location = $config->getDefaultNotFoundPathRedirect();
+            } else if($e instanceof MiddlewareDeniedException) {
+                $location = "/";
+            } else if($e instanceof NotAuthorizedException) {
+                if($e->isDomainLevel() && $config->getDefaultUnauthorizedSubdomainRedirect() !== null) $location = "https://".Bee::getBuiltDomain($config->getDefaultUnauthorizedSubdomainRedirect());
+                else $location = $config->getDefaultUnauthorizedPathRedirect();
+            }
+
+            // Never redirect to the page that just failed: show the error page instead of looping.
+            if($location !== null && rtrim($location, "/") !== rtrim($this->kernel->getRequest()->getPath(), "/")) {
+                HeaderService::addHeader("Location", $location);
                 $status = 302;
-            } else if($e instanceof NotAuthorizedException || is_subclass_of($e, NotAuthorizedException::class)) {
-                if($e->isDomainLevel() && $config->getDefaultUnauthorizedSubdomainRedirect() !== null) {
-                    HeaderService::addHeader("Location", "https://".Bee::getBuiltDomain($config->getDefaultUnauthorizedSubdomainRedirect()));
-                    $status = 302;
-                } else if($config->getDefaultUnauthorizedPathRedirect() !== null) {
-                    HeaderService::addHeader("Location", $config->getDefaultUnauthorizedPathRedirect());
-                    $status = 302;
-                }
             }
 
             $template = $this->kernel->getTemplate();
@@ -159,7 +165,8 @@ final class Server {
      * If the server has not been configured, it will return a 500 status code.
      *
      * Handles NotFoundException, BadImplementationException, EndpointFileNotFoundException, NotAuthorizedException,
-     * RateLimitExceededException, BadMiddlewareException, MiddlewareDeniedException, UploadedFileNotFoundException
+     * RateLimitExceededException, BadMiddlewareException, MiddlewareDeniedException, UploadedFileNotFoundException.
+     * Any other Throwable is wrapped into an UnhandledException.
      */
     public function run(): void {
         if ($this->ready) {
@@ -169,6 +176,8 @@ final class Server {
                 $response = $this->kernel->process(); // Request processing
             } catch(SmartException $e) {
                 $response = $this->handleException($e); // Exception handling
+            } catch(\Throwable $e) {
+                $response = $this->handleException(new UnhandledException($e)); // Anything else becomes a logged 500
             }
             $this->kernel->close($response); // Response processing and sending
         } else {

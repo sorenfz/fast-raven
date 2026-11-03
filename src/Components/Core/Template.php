@@ -3,12 +3,9 @@
 namespace FastRaven\Components\Core;
 
 use FastRaven\Services\AuthService;
-use FastRaven\Services\CacheService;
 use FastRaven\Bee;
 
 use FastRaven\Components\Data\Map;
-
-use FastRaven\Types\ProjectFolderType;
 
 final class Template {
     #----------------------------------------------------------------------
@@ -35,6 +32,14 @@ final class Template {
     private string $defaultLang = "en";
         public function getDefaultLang(): string { return $this->defaultLang; }
         public function setDefaultLang(string $defaultLang): Template { $this->defaultLang = $defaultLang; return $this; }
+    private string $lang = "";
+        public function getLang(): string { return $this->lang ?: $this->defaultLang; }
+        public function setLang(string $lang): Template { $this->lang = $lang; return $this; }
+    
+    private array $head = [];
+        public function getHead(): array { return $this->head; }
+        public function addHead(string $html): Template { $this->head[] = $html; return $this; }
+        public function addMeta(string $name, string $content): Template { return $this->addHead("<meta name=\"" . htmlspecialchars($name) . "\" content=\"" . htmlspecialchars($content) . "\">"); }
     
     private array $styles = [];
         public function getStyles(): array { return $this->styles; }
@@ -73,6 +78,7 @@ final class Template {
      * 
      * @return Template
      */
+    #[\NoDiscard]
     public static function new(string $file, string $title, string $version = ""): Template {
         return new Template($file, $title, $version);
     }
@@ -118,6 +124,8 @@ final class Template {
             $this->version = $template->getVersion() ? $template->getVersion() : $this->version;
             $this->faviconLight = $template->getFaviconLight() ? $template->getFaviconLight() : $this->faviconLight;
             $this->faviconDark = $template->getFaviconDark() ? $template->getFaviconDark() : $this->faviconDark;
+            $this->lang = $template->lang ?: $this->lang;
+            $this->head = array_merge($this->head, $template->getHead());
             $this->styles = array_merge($this->styles, $template->getStyles());
             $this->scripts = array_merge($this->scripts, $template->getScripts());
             $this->beforeFragments = array_merge($this->beforeFragments, $template->getBeforeFragments());
@@ -199,23 +207,47 @@ final class Template {
     }
 
     /**
-     * Returns the HTML script element containing the language data of the page.
-     * 
-     * The language data is retrieved from the web/lang directory.
+     * Returns the custom HTML head tags of the page, in insertion order.
+     *
+     * @return string The concatenated head tags.
+     */
+    public function getHtmlHead(): string {
+        return implode("", $this->head);
+    }
+
+    /**
+     * Resolves the page language from the client preferences, unless one was already set explicitly.
+     * The first preferred language available in the language file wins, falling back to the default language.
+     *
+     * @param string[] $preferred Language codes ordered by preference (see Request::getPreferredLanguages()).
+     */
+    public function resolveLang(array $preferred): Template {
+        if($this->lang === "") {
+            $available = array_keys(Bee::langData($this->langFile));
+            $this->lang = array_first(array_intersect($preferred, $available)) ?? $this->defaultLang;
+        }
+        return $this;
+    }
+
+    /**
+     * Translates a key into the page language. Falls back to the first language column, then to the key itself.
+     *
+     * @param string $key The translation key.
+     *
+     * @return string The translated text.
+     */
+    #[\NoDiscard]
+    public function lang(string $key): string {
+        return Bee::lang($key, $this->getLang(), $this->langFile);
+    }
+
+    /**
+     * Returns the HTML script element containing the language data of the page, used for client-side language switching.
      *
      * @return string The HTML script element containing the language data of the page.
      */
     public function getHtmlLang(): string {
-        $cacheKey = Bee::getCacheKey("lang", $this->langFile);
-
-        if(Bee::isDev()) CacheService::remove($cacheKey);
-        $langData = CacheService::read($cacheKey);
-        if ($langData === null) {
-            $langData = Bee::parseCSV(Bee::buildProjectPath(ProjectFolderType::SRC_WEB_ASSETS_LANG, $this->langFile . ".csv"));
-            CacheService::write($cacheKey, $langData, 86400);
-        }
-        
-        return "<script type=\"application/json\" id=\"__lang-internal\">" . json_encode($langData, JSON_UNESCAPED_UNICODE) . "</script>";
+        return "<script type=\"application/json\" id=\"__lang-internal\">" . json_encode(Bee::langData($this->langFile), JSON_UNESCAPED_UNICODE) . "</script>";
     }
 
     /**

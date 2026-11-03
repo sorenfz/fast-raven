@@ -6,7 +6,7 @@ use FastRaven\Types\ProjectFolderType;
 ?>
 
 <!DOCTYPE html>
-<html data-default-lang="<?= $template->getDefaultLang(); ?>">
+<html lang="<?= $template->getLang(); ?>">
     <head>
         <meta charset="UTF-8">
         <?= $template->getHtmlTitle(); ?>
@@ -19,6 +19,7 @@ use FastRaven\Types\ProjectFolderType;
         <link rel="stylesheet" href="/public/assets/css/base.css?v=<?= $template->getVersion(); ?>">
 
         <?= $template->getHtmlFavicon(); ?>
+        <?= $template->getHtmlHead(); ?>
         <?= $template->getHtmlStyles(); ?>
 
         <?= $template->getHtmlLang(); ?>

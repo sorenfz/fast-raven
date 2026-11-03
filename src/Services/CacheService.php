@@ -60,6 +60,7 @@ final class CacheService {
      */
     public static function exists(string $key): bool {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuExists($key),
                 CacheType::SHARED => self::$engine->shmopExists($key),
@@ -79,6 +80,7 @@ final class CacheService {
      */
     public static function read(string $key): mixed {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuRead($key)["value"] ?? null,
                 CacheType::SHARED => self::$engine->shmopRead($key)["value"] ?? null,
@@ -97,6 +99,7 @@ final class CacheService {
      */
     public static function readWithMeta(string $key): ?array {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuRead($key),
                 CacheType::SHARED => self::$engine->shmopRead($key),
@@ -117,6 +120,7 @@ final class CacheService {
      */
     public static function write(string $key, mixed $value, int $expires): bool {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuWrite($key, $value, $expires),
                 CacheType::SHARED => self::$engine->shmopWrite($key, $value, $expires),
@@ -136,6 +140,7 @@ final class CacheService {
      */
     public static function increment(string $key, int $step = 1): int {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuIncrement($key, $step),
                 CacheType::SHARED => self::$engine->shmopIncrement($key, $step),
@@ -155,6 +160,7 @@ final class CacheService {
      */
     public static function decrement(string $key, int $step = 1): int {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuIncrement($key, -$step),
                 CacheType::SHARED => self::$engine->shmopIncrement($key, -$step),
@@ -173,6 +179,7 @@ final class CacheService {
      */
     public static function remove(string $key): bool {
         if(self::$ready) {
+            $key = self::$engine->prefix($key);
             return match(self::$engine->getType()) {
                 CacheType::APCU => self::$engine->apcuRemove($key),
                 CacheType::SHARED => self::$engine->shmopRemove($key),
@@ -208,10 +215,8 @@ final class CacheService {
      * @param int $power Number of cache files to check for expiry.
      */
     public static function runGarbageCollector(int $power): void {
-        if(self::$ready) {
-            match(self::$engine->getType()) {
-                CacheType::FILE => self::$engine->runGarbageCollector($power),
-            };
+        if(self::$ready && self::$engine->getType() === CacheType::FILE) {
+            self::$engine->runGarbageCollector($power);
         }
     }
 

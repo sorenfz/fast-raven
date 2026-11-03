@@ -118,10 +118,10 @@ final class HeaderEngine {
     /**
      * Writes utility headers to the response.
      *
-     * @param bool $isApi Whether the request is an API request.
+     * @param bool $noStore Whether the response must never be stored (API responses and anything served to an authorized session).
      */
-    public function writeUtilityHeaders(bool $isApi): void {
-        if($isApi) HeaderService::addHeader("Cache-Control", "private, no-store, must-revalidate");
+    public function writeUtilityHeaders(bool $noStore): void {
+        if($noStore) HeaderService::addHeader("Cache-Control", "private, no-store, must-revalidate");
         else HeaderService::addHeader("Cache-Control", "private, max-age=600, stale-while-revalidate=30");
     }
 

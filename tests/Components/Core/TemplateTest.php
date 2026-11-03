@@ -263,4 +263,57 @@ class TemplateTest extends TestCase
         $this->assertEquals(['footer.php'], $template->getAfterFragments());
         $this->assertEquals('value', $template->getData('key'));
     }
+
+    public function testAddHeadAndAddMeta(): void
+    {
+        $template = Template::new('main.php', 'Test', '1.0');
+        $template->addHead('<link rel="canonical" href="https://example.com/">');
+        $template->addMeta('description', 'A "quoted" <desc>');
+
+        $this->assertCount(2, $template->getHead());
+        $this->assertEquals(
+            '<link rel="canonical" href="https://example.com/"><meta name="description" content="A &quot;quoted&quot; &lt;desc&gt;">',
+            $template->getHtmlHead()
+        );
+    }
+
+    public function testMergeCombinesHeadAndLang(): void
+    {
+        $template1 = Template::new('main.php', 'Page', '1.0')->addHead('<meta name="a" content="1">');
+        $template2 = Template::new('', '', '')->addHead('<meta name="b" content="2">')->setLang('es');
+
+        $template1->merge($template2);
+
+        $this->assertEquals(['<meta name="a" content="1">', '<meta name="b" content="2">'], $template1->getHead());
+        $this->assertEquals('es', $template1->getLang());
+    }
+
+    public function testGetLangFallsBackToDefaultLang(): void
+    {
+        $template = Template::new('main.php', 'Test')->setDefaultLang('fr');
+
+        $this->assertEquals('fr', $template->getLang());
+        $this->assertEquals('de', $template->setLang('de')->getLang());
+    }
+
+    public function testResolveLangKeepsExplicitLang(): void
+    {
+        $template = Template::new('main.php', 'Test')->setLang('de');
+
+        $template->resolveLang(['es', 'en']);
+
+        $this->assertEquals('de', $template->getLang());
+    }
+
+    public function testResolveLangFallsBackToDefaultWhenNothingAvailable(): void
+    {
+        // No SITE_PATH language file exists in tests, so no language is available.
+        if (!defined('SITE_PATH')) define('SITE_PATH', sys_get_temp_dir() . '/');
+        $template = Template::new('main.php', 'Test')->setDefaultLang('en');
+
+        $template->resolveLang(['es']);
+
+        $this->assertEquals('en', $template->getLang());
+        $this->assertEquals('MISSING_KEY', $template->lang('MISSING_KEY'));
+    }
 }

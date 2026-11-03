@@ -14,9 +14,9 @@ class Condition {
     private OperatorType $operator;
         public function getOperator(): OperatorType { return $this->operator; }
         public function setOperator(OperatorType $operator): void { $this->operator = $operator; }
-    private string|int|float|bool|array $right;
-        public function getRight(): string|int|float|bool|array { return $this->right; }
-        public function setRight(string|int|float|bool|array $right): void { $this->right = $right; }
+    private string|int|float|bool|array|null $right;
+        public function getRight(): string|int|float|bool|array|null { return $this->right; }
+        public function setRight(string|int|float|bool|array|null $right): void { $this->right = $right; }
 
     #/ VARIABLES
     #----------------------------------------------------------------------
@@ -29,11 +29,11 @@ class Condition {
      *
      * @param string $left What to compare.
      * @param OperatorType $operator The operator of the condition.
-     * @param string|int|float|bool|array $right What to compare against.
+     * @param string|int|float|bool|array|null $right What to compare against.
      *
      * @return Condition
      */
-    public static function new(string $left, OperatorType $operator, string|int|float|bool|array $right): Condition {
+    public static function new(string $left, OperatorType $operator, string|int|float|bool|array|null $right): Condition {
         return new Condition($left, $operator, $right);
     }
 
@@ -161,51 +161,75 @@ class Condition {
      * Create a new Condition instance with the operator BETWEEN.
      *
      * @param string $left What to compare.
-     * @param string|int|float $right What to compare against.
+     * @param string|int|float $low Lower bound (inclusive).
+     * @param string|int|float $high Upper bound (inclusive).
      *
      * @return Condition
      */
-    public static function between(string $left, string|int|float $right): Condition {
-        return new Condition($left, OperatorType::BETWEEN, $right);
+    public static function between(string $left, string|int|float $low, string|int|float $high): Condition {
+        return new Condition($left, OperatorType::BETWEEN, [$low, $high]);
     }
 
     /**
      * Create a new Condition instance with the operator NOT_BETWEEN.
      *
      * @param string $left What to compare.
-     * @param string|int|float $right What to compare against.
+     * @param string|int|float $low Lower bound (inclusive).
+     * @param string|int|float $high Upper bound (inclusive).
      *
      * @return Condition
      */
-    public static function notBetween(string $left, string|int|float $right): Condition {
-        return new Condition($left, OperatorType::NOT_BETWEEN, $right);
+    public static function notBetween(string $left, string|int|float $low, string|int|float $high): Condition {
+        return new Condition($left, OperatorType::NOT_BETWEEN, [$low, $high]);
     }
 
     /**
-     * Create a new Condition instance with the operator IS.
+     * Create a new Condition instance with the operator IS. Renders as IS TRUE, IS FALSE or IS NULL.
      *
      * @param string $left What to compare.
-     * @param string|bool $right What to compare against.
+     * @param ?bool $right What to compare against (null for IS NULL).
      *
      * @return Condition
      */
-    public static function is(string $left, string|bool $right): Condition {
+    public static function is(string $left, ?bool $right): Condition {
         return new Condition($left, OperatorType::IS, $right);
     }
 
     /**
-     * Create a new Condition instance with the operator IS_NOT.
+     * Create a new Condition instance with the operator IS_NOT. Renders as IS NOT TRUE, IS NOT FALSE or IS NOT NULL.
      *
      * @param string $left What to compare.
-     * @param string|bool $right What to compare against.
+     * @param ?bool $right What to compare against (null for IS NOT NULL).
      *
      * @return Condition
      */
-    public static function isNot(string $left, string|bool $right): Condition {
+    public static function isNot(string $left, ?bool $right): Condition {
         return new Condition($left, OperatorType::IS_NOT, $right);
     }
 
-    private function  __construct(string $left, OperatorType $operator, string|int|float|bool|array $right) {
+    /**
+     * Create a new Condition instance that renders as IS NULL.
+     *
+     * @param string $left What to compare.
+     *
+     * @return Condition
+     */
+    public static function isNull(string $left): Condition {
+        return new Condition($left, OperatorType::IS, null);
+    }
+
+    /**
+     * Create a new Condition instance that renders as IS NOT NULL.
+     *
+     * @param string $left What to compare.
+     *
+     * @return Condition
+     */
+    public static function isNotNull(string $left): Condition {
+        return new Condition($left, OperatorType::IS_NOT, null);
+    }
+
+    private function  __construct(string $left, OperatorType $operator, string|int|float|bool|array|null $right) {
         $this->left = $left;
         $this->right = $right;
         $this->operator = $operator;
@@ -217,7 +241,9 @@ class Condition {
     #----------------------------------------------------------------------
     #\ PRIVATE FUNCTIONS
 
-
+    private function isLiteral(): bool {
+        return in_array($this->operator, [OperatorType::IS, OperatorType::IS_NOT], true);
+    }
 
     #/ PRIVATE FUNCTIONS
     #----------------------------------------------------------------------
@@ -225,19 +251,32 @@ class Condition {
     #----------------------------------------------------------------------
     #\ METHODS
 
+    /**
+     * Returns the values to bind for this condition. IS / IS NOT render literals and bind nothing.
+     *
+     * @return array The flat list of bind values.
+     */
+    public function getBindValues(): array {
+        if($this->isLiteral()) return [];
+        $values = is_array($this->right) ? array_values($this->right) : [$this->right];
+        return array_map(fn($v) => is_bool($v) ? (int)$v : $v, $values);
+    }
+
+    /**
+     * Renders the condition as a SQL fragment.
+     *
+     * @param bool $offuscate Whether to render placeholders (?) instead of raw values.
+     *
+     * @return string The SQL fragment (e.g., "col = ?", "col IN (?, ?)", "col BETWEEN ? AND ?", "col IS NULL").
+     */
     public function parseToQuery(bool $offuscate = true): string {
-        if(is_array($this->right)) {
-            $rightValue = $offuscate ? 
-                implode(", ", array_fill(0, count($this->right), "?")) : 
-                implode(", ", $this->right);
-            return $this->left . " " . $this->operator->value . " (" . $rightValue . ")";
-        } else if(is_bool($this->right)) {
-            $rightValue = $offuscate ? "?" : ($this->right ? "1" : "0");
-            return $this->left . " " . $this->operator->value . " " . $rightValue;
-        } else {
-            $rightValue = $offuscate ? "?" : $this->right;
-            return $this->left . " " . $this->operator->value . " " . $rightValue;
-        }
+        $op = $this->operator->value;
+        $render = fn($v) => $offuscate ? "?" : (is_bool($v) ? (int)$v : $v);
+
+        if($this->isLiteral()) return "{$this->left} $op " . match($this->right) { null => "NULL", true => "TRUE", false => "FALSE" };
+        if(in_array($this->operator, [OperatorType::BETWEEN, OperatorType::NOT_BETWEEN], true)) return "{$this->left} $op {$render($this->right[0])} AND {$render($this->right[1])}";
+        if(is_array($this->right)) return "{$this->left} $op (" . implode(", ", array_map($render, $this->right)) . ")";
+        return "{$this->left} $op {$render($this->right)}";
     }
 
     #/ METHODS

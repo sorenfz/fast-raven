@@ -208,4 +208,14 @@ class ConfigTest extends TestCase
         // Probability 0 means GC is disabled
         $this->assertEquals(0, $config->getCacheFileGCProbability());
     }
+
+    public function testProxyNotTrustedByDefault(): void
+    {
+        $this->assertFalse(Config::new("main", false)->isProxyTrusted());
+    }
+
+    public function testConfigureProxy(): void
+    {
+        $this->assertTrue(Config::new("main", false)->configureProxy(true)->isProxyTrusted());
+    }
 }

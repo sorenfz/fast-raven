@@ -28,6 +28,8 @@ final class Request {
         public function getComplexPath(): string { return $this->complexPath; }
     private string $remoteAddress;
         public function getRemoteAddress(): string { return $this->remoteAddress; }
+    private array $preferredLanguages = [];
+        public function getPreferredLanguages(): array { return $this->preferredLanguages; }
 
     #/ VARIABLES
     #----------------------------------------------------------------------
@@ -43,13 +45,17 @@ final class Request {
      * @param string $dataStream       The data stream of the request.
      * @param array $fileStream        The file stream of the request.
      * @param string $remoteAddress    The remote address of the request.
+     * @param string $acceptLanguage   The Accept-Language header of the request.
+     * @param string $langCookie       The language explicitly chosen by the client ("lang" cookie).
      */
-    public function __construct(string $uri, string $method, string $dataStream, array $fileStream, string $remoteAddress) {
+    public function __construct(string $uri, string $method, string $dataStream, array $fileStream, string $remoteAddress, string $acceptLanguage = "", string $langCookie = "") {
         $this->internalID = bin2hex(random_bytes(4));
         $this->remoteAddress = $remoteAddress;
+        $this->preferredLanguages = $this->parseLanguages($acceptLanguage, $langCookie);
        
         parse_str(parse_url($uri, PHP_URL_QUERY) ?? "", $this->query);
-        $this->data = json_decode($dataStream, true) ?? $_POST ?? [];
+        $decoded = json_decode($dataStream, true);
+        $this->data = is_array($decoded) ? $decoded : ($_POST ?? []);
         $this->files = [];
         foreach ($fileStream as $name => $data) {
             if (isset($data["tmp_name"]) && $data["tmp_name"]) {
@@ -73,6 +79,24 @@ final class Request {
     #----------------------------------------------------------------------
     #\ PRIVATE FUNCTIONS
 
+    /**
+     * Parses the client language preferences: the cookie first, then Accept-Language primary tags ordered by quality.
+     * 
+     * @return string[] Lowercase language codes without duplicates (e.g., ["es", "en"]).
+     */
+    private function parseLanguages(string $header, string $cookie): array {
+        $weights = [];
+        foreach(explode(",", $header) as $part) {
+            [$tag, $q] = array_pad(preg_split('/\s*;\s*q=/', trim($part), 2), 2, "1");
+            if($tag !== "") $weights[strtolower(explode("-", $tag)[0])] ??= (float)$q;
+        }
+        arsort($weights);
+
+        return [strtolower($cookie), ...array_keys($weights)]
+            |> array_filter(...)
+            |> array_unique(...)
+            |> array_values(...);
+    }
     
     /**
      * Sanitizes a value from an array based on the specified sanitization level.
@@ -121,6 +145,7 @@ final class Request {
      * 
      * @return mixed The sanitized value, or null if the key does not exist.
      */
+    #[\NoDiscard]
     public function get(string $key, SanitizeType $sanitizeType = SanitizeType::RAW): mixed {
         return $this->sanitizeDataItem($this->query, $key, $sanitizeType);
     }
@@ -137,6 +162,7 @@ final class Request {
      * 
      * @return mixed The sanitized value, or null if the key does not exist.
      */
+    #[\NoDiscard]
     public function post(string $key, SanitizeType $sanitizeType = SanitizeType::RAW): mixed {
         return $this->sanitizeDataItem($this->data, $key, $sanitizeType);
     }
@@ -148,6 +174,7 @@ final class Request {
      * 
      * @return ?File The temporary file path, or null if not found.
      */
+    #[\NoDiscard]
     public function file(string $name): ?File {
         return $this->files[$name] ?? null;
     }
